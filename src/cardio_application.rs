@@ -74,12 +74,12 @@ pub fn operate() {
 
 fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
     let mut serialized_data = Cursor::new(serialized_data);
-    let mut man: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let man: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
     let woman: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let mut antecedent: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let mut smoking: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let mut diabetic: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let mut high_blood_pressure: Ciphertext =
+    let antecedent: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let smoking: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let diabetic: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let high_blood_pressure: Ciphertext =
         bincode::deserialize_from(&mut serialized_data).unwrap();
     let age = bincode::deserialize_from(&mut serialized_data).unwrap();
     let hdl_cholesterol: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
@@ -90,42 +90,42 @@ fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
     let alcohol_consumption: Ciphertext =
         bincode::deserialize_from(&mut serialized_data).unwrap();
 
-    let mut cardio_risk = server_key.smart_scalar_mul(&mut man, 0u8);
+    let mut cardio_risk = server_key.unchecked_scalar_mul(&man, 0u8);
 
     // +1: if man && age > 50 years
     let acc = server_key
         .generate_accumulator_bivariate(|man, age| if man == 1 && age > 50 { 1 } else { 0 });
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap_bivariate(&man, &age, &acc),
-        &mut cardio_risk,
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap_bivariate(&man, &age, &acc),
+        &cardio_risk,
     );
 
     // +1: if woman && age > 60 years
     let acc = server_key
         .generate_accumulator_bivariate(|woman, age| if woman == 1 && age > 60 { 1 } else { 0 });
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap_bivariate(&woman, &age, &acc),
-        &mut cardio_risk,
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap_bivariate(&woman, &age, &acc),
+        &cardio_risk,
     );
 
     // +1: if antecedent
-    cardio_risk = server_key.smart_add(&mut antecedent, &mut cardio_risk);
+    cardio_risk = server_key.unchecked_add(&antecedent, &cardio_risk);
 
     // +1: if smoking
-    cardio_risk = server_key.smart_add(&mut smoking, &mut cardio_risk);
+    cardio_risk = server_key.unchecked_add(&smoking, &cardio_risk);
 
     // +1: if diabetic
-    cardio_risk = server_key.smart_add(&mut diabetic, &mut cardio_risk);
+    cardio_risk = server_key.unchecked_add(&diabetic, &cardio_risk);
 
     // +1: if high blood pressure
-    cardio_risk = server_key.smart_add(&mut high_blood_pressure, &mut cardio_risk);
+    cardio_risk = server_key.unchecked_add(&high_blood_pressure, &cardio_risk);
 
     // +1: if HDL cholesterol < 40
     let acc =
         server_key.generate_accumulator(|hdl_cholesterol| if hdl_cholesterol < 40 { 1 } else { 0 });
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap(&hdl_cholesterol, &acc),
-        &mut cardio_risk,
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap(&hdl_cholesterol, &acc),
+        &cardio_risk,
     );
 
     // +1: if weight > height-90
@@ -136,17 +136,17 @@ fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
             0
         }
     });
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap_bivariate(&weight, &height, &acc),
-        &mut cardio_risk,
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap_bivariate(&weight, &height, &acc),
+        &cardio_risk,
     );
 
     // +1: if daily physical activity < 30
     let acc = server_key
         .generate_accumulator(|daily_physical_act| if daily_physical_act < 30 { 1 } else { 0 });
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap(&daily_physical_activity, &acc),
-        &mut cardio_risk,
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap(&daily_physical_activity, &acc),
+        &cardio_risk,
     );
 
     // +1: if man && alcohol cons. > 3 glasses/day
@@ -154,13 +154,13 @@ fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
         server_key.generate_accumulator_bivariate(
             |man, alcohol_cons| if man == 1 && alcohol_cons > 3 { 1 } else { 0 },
         );
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap_bivariate(
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap_bivariate(
             &man,
             &alcohol_consumption,
             &acc,
         ),
-        &mut cardio_risk,
+        &cardio_risk,
     );
 
     // if !man && alcohol cons. > 2 glasses/day
@@ -168,13 +168,13 @@ fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
         server_key.generate_accumulator_bivariate(
             |man, alcohol_cons| if man == 0 && alcohol_cons > 2 { 1 } else { 0 },
         );
-    cardio_risk = server_key.smart_add(
-        &mut server_key.keyswitch_programmable_bootstrap_bivariate(
+    cardio_risk = server_key.unchecked_add(
+        &server_key.keyswitch_programmable_bootstrap_bivariate(
             &man,
             &alcohol_consumption,
             &acc,
         ),
-        &mut cardio_risk,
+        &cardio_risk,
     );
 
     cardio_risk
