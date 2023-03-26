@@ -1,11 +1,17 @@
-use crate::keys::keys_gen;
 use std::io::Cursor;
-use tfhe::shortint::parameters::{PARAM_MESSAGE_8_CARRY_0};
+
+use tfhe::core_crypto::prelude::CastInto;
+use tfhe::integer::public_key::standard::PublicKey;
+use tfhe::integer::{IntegerCiphertext, ServerKey};
+use tfhe::integer::{RadixCiphertext, RadixClientKey};
 use tfhe::shortint::prelude::*;
+
+use crate::keys::keys_gen;
 
 pub fn operate() {
     // We generate a set of client/server keys, using the default parameters:
-    let (client_key, server_key) = keys_gen(PARAM_MESSAGE_8_CARRY_0).unwrap();
+    let (client_key, server_key) = keys_gen().unwrap();
+    let public_key = PublicKey::new(client_key.as_ref());
     println!("Keys generated");
 
     let man = 1;
@@ -16,7 +22,7 @@ pub fn operate() {
     let high_blood_pressure = 1;
     let age = 60;
     let hdl_cholesterol = 24;
-    let weight = 70;
+    let weight = 76;
     let height = 180;
     let daily_physical_activity = 10;
     let alcohol_consumption = 3;
@@ -64,7 +70,7 @@ pub fn operate() {
     bincode::serialize_into(&mut serialized_data, &alcohol_consumption).unwrap();
 
     let now = std::time::Instant::now();
-    let result = naive_compute(&serialized_data, server_key);
+    let result = naive_compute(&serialized_data, &client_key, public_key, server_key);
     let then = now.elapsed().as_secs_f32();
 
     // We use the client key to decrypt the output of the operation:
@@ -72,109 +78,122 @@ pub fn operate() {
     println!("time: {then}, clear output: {clear_output}, fhe output: {output}");
 }
 
-fn naive_compute(serialized_data: &[u8], server_key: ServerKey) -> Ciphertext {
+fn naive_compute(
+    serialized_data: &[u8],
+    _client_key: &RadixClientKey,
+    public_key: PublicKey,
+    server_key: ServerKey,
+) -> RadixCiphertext {
     let mut serialized_data = Cursor::new(serialized_data);
-    let man: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let woman: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let antecedent: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let smoking: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let diabetic: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let high_blood_pressure: Ciphertext =
+    let mut man: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let mut woman: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let antecedent: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let smoking: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let diabetic: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let high_blood_pressure: RadixCiphertext =
         bincode::deserialize_from(&mut serialized_data).unwrap();
     let age = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let hdl_cholesterol: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let weight: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let height: Ciphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
-    let daily_physical_activity: Ciphertext =
+    let hdl_cholesterol: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let mut weight: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let mut height: RadixCiphertext = bincode::deserialize_from(&mut serialized_data).unwrap();
+    let daily_physical_activity: RadixCiphertext =
         bincode::deserialize_from(&mut serialized_data).unwrap();
-    let alcohol_consumption: Ciphertext =
+    let alcohol_consumption: RadixCiphertext =
         bincode::deserialize_from(&mut serialized_data).unwrap();
 
-    let mut cardio_risk = server_key.unchecked_scalar_mul(&man, 0u8);
+    let mut cardio_risk = server_key.unchecked_small_scalar_mul(&man, 0u64);
+    // let one = public_key.encrypt_radix(1u64, NUM_BLOCKS);
+    // let fifty = public_key.encrypt_radix(50u64, NUM_BLOCKS);
+    let zero = server_key.unchecked_small_scalar_mul(&man, 0u64);
+    let one = server_key.unchecked_scalar_add(&zero, 1u64);
+    let two = server_key.unchecked_scalar_add(&zero, 2u64);
+    let three = server_key.unchecked_scalar_add(&zero, 3u64);
+    let thirty = server_key.unchecked_scalar_add(&zero, 30u64);
+    let forty = server_key.unchecked_scalar_add(&zero, 40u64);
+    let fifty = server_key.unchecked_scalar_add(&zero, 50u64);
+    let sixty = server_key.unchecked_scalar_add(&zero, 60u64);
+    let mut ninety = server_key.unchecked_scalar_add(&zero, 90u64);
 
-    // +1: if man && age > 50 years
-    let acc = server_key
-        .generate_accumulator_bivariate(|man, age| if man == 1 && age > 50 { 1 } else { 0 });
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap_bivariate(&man, &age, &acc),
-        &cardio_risk,
+    // +1: if man && age > 50 years <=> man * (age > 50)
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_mul_parallelized(
+            &mut man,
+            &server_key.unchecked_gt_parallelized(&age, &fifty),
+        ),
     );
 
-    // +1: if woman && age > 60 years
-    let acc = server_key
-        .generate_accumulator_bivariate(|woman, age| if woman == 1 && age > 60 { 1 } else { 0 });
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap_bivariate(&woman, &age, &acc),
-        &cardio_risk,
+    // +1: if woman && age > 60 years <=> woman * age > 60
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_mul_parallelized(
+            &mut woman,
+            &server_key.unchecked_gt_parallelized(&age, &sixty),
+        ),
     );
 
     // +1: if antecedent
-    cardio_risk = server_key.unchecked_add(&antecedent, &cardio_risk);
+    server_key.unchecked_add_assign(&mut cardio_risk, &antecedent);
 
     // +1: if smoking
-    cardio_risk = server_key.unchecked_add(&smoking, &cardio_risk);
+    server_key.unchecked_add_assign(&mut cardio_risk, &smoking);
 
     // +1: if diabetic
-    cardio_risk = server_key.unchecked_add(&diabetic, &cardio_risk);
+    server_key.unchecked_add_assign(&mut cardio_risk, &diabetic);
 
     // +1: if high blood pressure
-    cardio_risk = server_key.unchecked_add(&high_blood_pressure, &cardio_risk);
+    server_key.unchecked_add_assign(&mut cardio_risk, &high_blood_pressure);
 
     // +1: if HDL cholesterol < 40
-    let acc =
-        server_key.generate_accumulator(|hdl_cholesterol| if hdl_cholesterol < 40 { 1 } else { 0 });
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap(&hdl_cholesterol, &acc),
-        &cardio_risk,
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_lt_parallelized(&hdl_cholesterol, &forty),
     );
 
-    // +1: if weight > height-90
-    let acc = server_key.generate_accumulator_bivariate(|weight, height| {
-        if weight as i64 > (height as i64 - 90) {
-            1
-        } else {
-            0
-        }
-    });
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap_bivariate(&weight, &height, &acc),
-        &cardio_risk,
+    // +1: if weight > height-90 <=> if weight + 90 > height
+    println!(
+        "{},{}",
+        _client_key.decrypt(&weight),
+        _client_key.decrypt(&server_key.unchecked_scalar_sub(&height, 90u64))
+    );
+    println!(
+        "{} {} {} {}",
+        _client_key.decrypt_one_block(&height.blocks()[0]),
+        _client_key.decrypt_one_block(&height.blocks()[1]),
+        _client_key.decrypt_one_block(&height.blocks()[2]),
+        _client_key.decrypt_one_block(&height.blocks()[3])
+    );
+    // TODO See this here: (smart_gt_parallelized)
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.smart_gt_parallelized(
+            &mut server_key.unchecked_scalar_add(&weight, 90),
+            &mut height,
+        ),
     );
 
     // +1: if daily physical activity < 30
-    let acc = server_key
-        .generate_accumulator(|daily_physical_act| if daily_physical_act < 30 { 1 } else { 0 });
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap(&daily_physical_activity, &acc),
-        &cardio_risk,
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_lt_parallelized(&daily_physical_activity, &thirty),
     );
 
     // +1: if man && alcohol cons. > 3 glasses/day
-    let acc =
-        server_key.generate_accumulator_bivariate(
-            |man, alcohol_cons| if man == 1 && alcohol_cons > 3 { 1 } else { 0 },
-        );
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap_bivariate(
-            &man,
-            &alcohol_consumption,
-            &acc,
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_mul_parallelized(
+            &mut man,
+            &server_key.unchecked_gt_parallelized(&alcohol_consumption, &three),
         ),
-        &cardio_risk,
     );
 
     // if !man && alcohol cons. > 2 glasses/day
-    let acc =
-        server_key.generate_accumulator_bivariate(
-            |man, alcohol_cons| if man == 0 && alcohol_cons > 2 { 1 } else { 0 },
-        );
-    cardio_risk = server_key.unchecked_add(
-        &server_key.keyswitch_programmable_bootstrap_bivariate(
-            &man,
-            &alcohol_consumption,
-            &acc,
+    server_key.unchecked_add_assign(
+        &mut cardio_risk,
+        &server_key.unchecked_mul_parallelized(
+            &mut server_key.unchecked_eq_parallelized(&man, &zero),
+            &server_key.unchecked_gt_parallelized(&alcohol_consumption, &two),
         ),
-        &cardio_risk,
     );
 
     cardio_risk
@@ -201,7 +220,7 @@ fn clear_compute(data: Vec<u64>) -> u64 {
     cardio_risk += if woman == 1 && age > 60 { 1 } else { 0 };
 
     // +1: if antecedent
-    cardio_risk += if antecedent == 1 {1} else {0};
+    cardio_risk += if antecedent == 1 { 1 } else { 0 };
 
     // +1: if smoking
     cardio_risk += if smoking == 1 { 1 } else { 0 };
