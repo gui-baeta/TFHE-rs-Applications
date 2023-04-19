@@ -2,3 +2,5 @@
 .idea
 Cargo.lock
 *.bin
+*.patch
+times.txt
