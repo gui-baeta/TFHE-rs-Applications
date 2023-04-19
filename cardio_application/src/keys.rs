@@ -12,7 +12,11 @@ use crate::NUM_BLOCKS;
 pub const CLIENT_KEY_FILE_PATH: &'static str = "cardio_application/assets/client_key.bin";
 pub const SERVER_KEY_FILE_PATH: &'static str = "cardio_application/assets/server_key.bin";
 
-pub fn keys_gen() -> Result<(RadixClientKey, ServerKey), Box<dyn Error>> {
+pub fn keys_gen(save: bool) -> Result<(RadixClientKey, ServerKey), Box<dyn Error>> {
+    if save {
+        return Ok(gen_keys_radix(&PARAM_MESSAGE_2_CARRY_2, NUM_BLOCKS))
+    }
+
     let client_key_path = Path::new(CLIENT_KEY_FILE_PATH);
     let server_key_path = Path::new(SERVER_KEY_FILE_PATH);
 
