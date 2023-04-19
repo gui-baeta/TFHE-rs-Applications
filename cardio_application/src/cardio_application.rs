@@ -1,4 +1,7 @@
-use std::io::Cursor;
+use std::fmt::format;
+use std::fs::OpenOptions;
+use std::io::{Cursor, Write};
+use std::time::Instant;
 
 use tfhe::core_crypto::prelude::CastInto;
 use tfhe::integer::public_key::standard::PublicKey;
@@ -10,7 +13,9 @@ use crate::keys::keys_gen;
 
 pub fn operate() {
     // We generate a set of client/server keys, using the default parameters:
-    let (client_key, server_key) = keys_gen().unwrap();
+    let t_keygen = Instant::now();
+    let (client_key, server_key) = keys_gen(false).unwrap();
+    let t_keygen = t_keygen.elapsed().as_millis();
     let public_key = PublicKey::new(client_key.as_ref());
     println!("Keys generated");
 
@@ -43,6 +48,7 @@ pub fn operate() {
     ];
     let clear_output = clear_compute(data);
 
+    let t_encrypt = Instant::now();
     let man = client_key.encrypt(man);
     let woman = client_key.encrypt(woman);
     let antecedent = client_key.encrypt(antecedent);
@@ -55,6 +61,8 @@ pub fn operate() {
     let height = client_key.encrypt(height);
     let daily_physical_activity = client_key.encrypt(daily_physical_activity);
     let alcohol_consumption = client_key.encrypt(alcohol_consumption);
+    let t_encrypt = t_encrypt.elapsed().as_millis();
+
     let mut serialized_data = Vec::new();
     bincode::serialize_into(&mut serialized_data, &man).unwrap();
     bincode::serialize_into(&mut serialized_data, &woman).unwrap();
@@ -69,13 +77,23 @@ pub fn operate() {
     bincode::serialize_into(&mut serialized_data, &daily_physical_activity).unwrap();
     bincode::serialize_into(&mut serialized_data, &alcohol_consumption).unwrap();
 
-    let now = std::time::Instant::now();
+    let t_computation = std::time::Instant::now();
     let result = naive_compute(&serialized_data, &client_key, public_key, server_key);
-    let then = now.elapsed().as_secs_f32();
+    let t_computation = t_computation.elapsed().as_millis();
 
     // We use the client key to decrypt the output of the operation:
+    let t_decrypt = Instant::now();
     let output = client_key.decrypt(&result);
-    println!("time: {then}, clear output: {clear_output}, fhe output: {output}");
+    let t_decrypt = t_decrypt.elapsed().as_millis();
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open("times.txt").unwrap();
+
+    file.write_all(format!("{t_keygen},{t_encrypt},{t_computation},{t_decrypt}\n").as_bytes()).unwrap();
+    assert_eq!(clear_output, output);
+    println!("Result: {output}");
 }
 
 fn naive_compute(
@@ -150,19 +168,19 @@ fn naive_compute(
         &server_key.unchecked_lt_parallelized(&hdl_cholesterol, &forty),
     );
 
-    // +1: if weight > height-90 <=> if weight + 90 > height
-    println!(
-        "{},{}",
-        _client_key.decrypt(&weight),
-        _client_key.decrypt(&server_key.unchecked_scalar_sub(&height, 90u64))
-    );
-    println!(
-        "{} {} {} {}",
-        _client_key.decrypt_one_block(&height.blocks()[0]),
-        _client_key.decrypt_one_block(&height.blocks()[1]),
-        _client_key.decrypt_one_block(&height.blocks()[2]),
-        _client_key.decrypt_one_block(&height.blocks()[3])
-    );
+    // +1: if weight > height - 90 <=> if weight + 90 > height
+    // println!(
+    //     "{},{}",
+    //     _client_key.decrypt(&weight),
+    //     _client_key.decrypt(&server_key.unchecked_scalar_sub(&height, 90u64))
+    // );
+    // println!(
+    //     "{} {} {} {}",
+    //     _client_key.decrypt_one_block(&height.blocks()[0]),
+    //     _client_key.decrypt_one_block(&height.blocks()[1]),
+    //     _client_key.decrypt_one_block(&height.blocks()[2]),
+    //     _client_key.decrypt_one_block(&height.blocks()[3])
+    // );
     // TODO See this here: (smart_gt_parallelized)
     server_key.unchecked_add_assign(
         &mut cardio_risk,
