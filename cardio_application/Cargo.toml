@@ -1,0 +1,8 @@
+[package]
+name = "cardio_application"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tfhe = { git = "https://github.com/zama-ai/tfhe-rs", branch = "new-front-bivarfix", features = ["integer", "shortint", "x86_64-unix"] }
+bincode = "1.3.3"
